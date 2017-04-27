@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>2013&ndash;2014 Regular Season: 5-on-5 Performance by Team</title>
+	<link rel="stylesheet" type="text/css" href="style.css">
+	<link rel="icon" type="image/png" href="http://www.datarink.com/favicon.png">
+	<script src="../d3.v3.min.js"></script>
+	<script src="d3-tip.js"></script>
+</head>
+<body>
+<div id="container">
+	<div>
+		<div class="title">
+			<h1>2013&ndash;2014 Regular Season: 5-on-5 Performance by Team</h1>
+		</div>
+		<div class="selector">
+			<ul>
+				<li class="top8">Top&thinsp;8</li><li class="selector bottom8">Bottom&thinsp;8</li><li class="selector atlantic">Atlantic</li><li class="selector metropolitan">Metropolitan</li><li class="selector central">Central</li><li class="selector pacific">Pacific</li>
+			</ul>
+		</div>
+	</div>
+	<div id="staticContent">
+		<div id="ptLinesDiv">
+			<svg id="ptLines"></svg>
+			<h2>Points above .500</h2>
+			<p>Move the vertical line to see aggregate Fenwick rates and shooting percentages in the rightmost chart. Select a team to highlight its division.</p>
+		</div><div id="teamLegendDiv">
+			<svg id="teamLegend"></svg>
+		</div><div id="gameWhiskersDiv">
+			<svg id="gameWhiskers"></svg>
+			<h2>Fenwick-for & shooting percentages</h2>
+			<p>Bar tops show Fenwick-for percentages per game. Bottoms show differences in shooting percentages (for&thinsp;−&thinsp;against).</p>
+		</div><div id="gameWhiskersAnchorLabelsDiv">
+			<svg id="gameWhiskersAnchorLabels"></svg>
+		</div>
+	</div>
+	<div id="fenwickLinesDiv">
+		<svg id="fenwickLines"></svg>
+		<h2>Aggregate Fenwick rates & shooting percentages</h2>
+		<p>Arrowheads point to teams' Fenwick-for per 60 minutes of 5-on-5 play.<br>Fenwick-against rates are at the other end.<br>Resize your browser window to widen this chart.</p>
+	</div>
+</div>
+<script>
+
+var inputFile = "5v5_stats.csv";
+var dataset;
+var gameRange = [0, 82];
+var maxTeamsPerDivision = 8;
+
+var ptLinesSliderInput;
+var gameWhiskersSliderInput;
+var selectedGame = 82;
+
+var currentCriteria;
+var highlightedTeams = new Array();
+var top8Teams = new Array();
+var bottom8Teams;
+
+var earliestGameForSeasonStats = 20;
+var earliestSelectableGame = 1;
+
+var whiskerWidth = 2;
+var whiskerGap = 1;
+var fenwickLinesXAxisIncrement = 1;
+var dotCoords = new Array;
+
+var darkGray = "#666";
+var midGray = "#ccc";
+var lightGray = "#e2e2e2";
+var whiskerColours = ["#bfd7e9", "#f9d6d6"];
+var teamColours = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#ffbf47", "#a65628", "#f781bf"];
+
+var fenwickLinesXAxis;
+var fenwickLinesYAxis;
+
+
+// **********
+// Initialize d3-tip tooltips
+// **********
+var gameWhiskersTip = d3.tip()
+	.attr("id", "gameWhiskersTip")
+	.attr("class", "d3-tip")
+	.direction("s")
+	.offset([15, 0])
+	.html(function(d) {
+		var tipText = d.team.toUpperCase() + " game " + d.game +":";
+		if (d.all_gf > d.all_ga) {
+			tipText = tipText + " " + d.all_gf + "&ndash;" + d.all_ga;
+		} else if (d.all_gf <= d.all_ga) {
+			tipText = tipText + " " + d.all_ga + "&ndash;" + d.all_gf;
+		}
+		if (d.pts === 0) {
+			tipText = tipText + " regulation loss to ";
+		} else if (d.pts === 1) {
+			tipText = tipText + " overtime loss to ";
+		} else if (d.pts === 2) {
+			tipText = tipText + " win over ";
+		}
+		tipText = tipText + d.opp.toUpperCase();
+		var ptPercentageString = (d.total_pts/(d.game*2)).toFixed(3).toString();
+		if (ptPercentageString.indexOf("0.") > -1) {
+			ptPercentageString = ptPercentageString.substring(ptPercentageString.indexOf("0.")+1);
+		}
+		tipText = tipText + "<br>" + ptPercentageString +" point percentage";
+		tipText = tipText + "<br>5-on-5 Fenwick: " + d.ff +" for (" + Math.round(100*d.ff/(d.fa+d.ff)) + "%), " + d.fa + " against";
+		tipText = tipText + "<br>5-on-5 shooting: " + Math.round(100*d.gf/d.sf) + "% for, " + Math.round(100*d.ga/d.sa) + "% against";
+		if ( (d.gf/d.sf) - (d.ga/d.sa) > d.ff / (d.ff + d.fa) ) {
+			tipText = tipText + "<br><br>× The Fenwick-for percentage is lower than<br>the difference in shooting percentages";
+		}
+		return tipText;
+	});
+
+var fenwickLinesTip = d3.tip()
+	.attr("id", "fenwickLinesTip")
+	.attr("class", "d3-tip")
+	.direction("sw")
+	.offset([10, 18])
+	.html(function(d) {
+		var tipText = d.key.toUpperCase();
+		if (selectedGame === 1) {
+			tipText = tipText + " game 1";
+		} else if (selectedGame < 82) {
+			tipText = tipText + " games 1&ndash;" + selectedGame;
+		} else if (selectedGame === 82) {
+			tipText = tipText + " full season";
+		}
+		if (highlightedTeams.indexOf(d.key) > -1) {
+			var colour = teamColours[(teamColours.length - 1) - highlightedTeams.indexOf(d.key) - (teamColours.length - highlightedTeams.length)];
+			tipText = tipText + "<div style=\"height:10px; width:10px; float:right; border-radius:2px; margin-top:4px; background-color:" + colour +"\"></div>"
+		}
+		var ptPercentageString = (d.aggregatePts/(d.aggregateGames*2)).toFixed(3).toString();
+		if (ptPercentageString.indexOf("0.") > -1) {
+			ptPercentageString = ptPercentageString.substring(ptPercentageString.indexOf("0.")+1);
+		}
+		tipText = tipText + "<br>" + ptPercentageString +" point percentage";
+
+		tipText = tipText + "<br>Fenwick per 60 5-on-5 minutes: " + Math.round(d.aggregateFfPer60) + " for (" + Math.round(100*d.aggregateFfPer60/(d.aggregateFfPer60+d.aggregateFaPer60))+ "%), " + Math.round(d.aggregateFaPer60) + " against";
+		tipText = tipText + "<br>5-on-5 shooting: " + Math.round(100*d.aggregateShootingPercentageFor) + "% for, " + Math.round(100*d.aggregateShootingPercentageAgainst) + "% against";
+		return tipText;
+	});
+
+// **********
+// Set SVG dimensions
+// **********
+
+var totalHorizontalMargin = parseInt(d3.select("#gameWhiskersDiv").style("width")) - 82*(whiskerGap + whiskerWidth);
+var gameWhiskersChildMargin = {top: 0, right: Math.floor(totalHorizontalMargin/2), bottom: 0, left: Math.ceil(totalHorizontalMargin/2)},
+	gameWhiskersChildWidth = parseInt(d3.select("#gameWhiskersDiv").style("width")) - gameWhiskersChildMargin.left - gameWhiskersChildMargin.right,
+	gameWhiskersChildHeight = 60 - gameWhiskersChildMargin.top - gameWhiskersChildMargin.bottom;
+
+var gameWhiskersAnchorLabelsMargin = {top: 0, right: 0, bottom: 0, left: 2},
+	gameWhiskersAnchorLabelsWidth = parseInt(d3.select("#gameWhiskersAnchorLabelsDiv").style("width")) - gameWhiskersAnchorLabelsMargin.left - gameWhiskersAnchorLabelsMargin.right,
+	gameWhiskersAnchorLabelsHeight = gameWhiskersChildHeight - gameWhiskersAnchorLabelsMargin.top - gameWhiskersAnchorLabelsMargin.bottom;
+
+var teamLegendChildMargin = {top: gameWhiskersChildMargin.top, right:0, bottom: gameWhiskersChildMargin.bottom, left: 5},
+	teamLegendChildWidth = parseInt(d3.select("#teamLegendDiv").style("width")) - teamLegendChildMargin.left - teamLegendChildMargin.right,
+	teamLegendChildHeight = gameWhiskersChildHeight - teamLegendChildMargin.top - teamLegendChildMargin.bottom;
+
+var ptLinesMargin = {top: 1, right: 5, bottom: 1, left: 1},
+	ptLinesWidth = parseInt(d3.select("#ptLinesDiv").style("width"))- ptLinesMargin.left - ptLinesMargin.right,
+	ptLinesHeight = maxTeamsPerDivision*gameWhiskersChildHeight - ptLinesMargin.top - ptLinesMargin.bottom;
+
+var fenwickLinesMargin = {top: 5, right: 5, bottom: 15, left: 25},
+	fenwickLinesWidth = parseInt(d3.select("#fenwickLinesDiv").style("width"), 10) - fenwickLinesMargin.left - fenwickLinesMargin.right,
+	fenwickLinesHeight = maxTeamsPerDivision*gameWhiskersChildHeight - fenwickLinesMargin.top - fenwickLinesMargin.bottom;
+
+// *********
+// Append SVG groups for each chart
+// *********
+var ptLinesSvg = d3.select("#ptLines")
+	.attr("width", ptLinesWidth + ptLinesMargin.left + ptLinesMargin.right)
+	.attr("height", ptLinesHeight + ptLinesMargin.top + ptLinesMargin.bottom)
+	.append("g")
+		.attr("transform", "translate(" + ptLinesMargin.left + "," + ptLinesMargin.top + ")");
+
+var fenwickLinesSvg = d3.select("#fenwickLines")
+	.attr("width", fenwickLinesWidth + fenwickLinesMargin.left + fenwickLinesMargin.right)
+	.attr("height", fenwickLinesHeight + fenwickLinesMargin.top + fenwickLinesMargin.bottom)
+	.call(fenwickLinesTip)
+	.append("g")
+		.attr("transform", "translate(" + fenwickLinesMargin.left + "," + fenwickLinesMargin.top + ")");
+
+var gameWhiskersSvg = d3.select("#gameWhiskers")
+	.attr("width", gameWhiskersChildWidth + gameWhiskersChildMargin.left + gameWhiskersChildMargin.right)
+	.attr("height", maxTeamsPerDivision*gameWhiskersChildHeight)
+	.call(gameWhiskersTip)
+
+	.append("g")
+		.attr("transform", "translate(" + gameWhiskersChildMargin.left + "," + gameWhiskersChildMargin.top + ")");
+
+var gameWhiskersAnchorLabelsSvg = d3.select("#gameWhiskersAnchorLabels")
+	.attr("width", gameWhiskersAnchorLabelsWidth + gameWhiskersAnchorLabelsMargin.left + gameWhiskersAnchorLabelsMargin.right)
+	.attr("height", gameWhiskersAnchorLabelsHeight)
+	.append("g")
+		.attr("transform", "translate(" + gameWhiskersAnchorLabelsMargin.left + "," + gameWhiskersAnchorLabelsMargin.top + ")");
+
+var teamLegendSvg = d3.select("#teamLegend")
+	.attr("width", teamLegendChildWidth + teamLegendChildMargin.left + teamLegendChildMargin.right)
+	.attr("height", maxTeamsPerDivision*teamLegendChildHeight);
+
+// **********
+// Since touch devices open the d3-tips on tap and don't automatically close them, let users tap on the d3-tip to close them
+// **********
+d3.select("#gameWhiskersTip").on("click", function() { gameWhiskersTip.hide(); });
+d3.select("#fenwickLinesTip").on("click", function() { fenwickLinesTip.hide(); });
+
+// **********
+// Initialize scales
+// Domains for each scale will be set by the updateScales function
+// **********
+var gameWhiskersXScale = d3.scale.linear()
+	.range([0, 82*(whiskerWidth + whiskerGap)]);
+var gameWhiskersYScale = d3.scale.linear()
+	.range([gameWhiskersChildHeight, 0]);
+var ptLinesXScale = d3.scale.linear()
+	.range([0, ptLinesWidth]);
+var ptLinesYScale = d3.scale.linear()
+	.range([ptLinesHeight, 0]);
+var fenwickLinesXScale = d3.scale.linear()
+	.range([0, fenwickLinesWidth]);
+var fenwickLinesYScale = d3.scale.linear()
+	.range([fenwickLinesHeight, 0]);
+
+// **********
+// Main
+// **********
+d3.csv(inputFile, formatData, function (error, rows) {
+
+	// Group the games by team
+	dataset = d3.nest()
+		.key(function(d) { return d.team; })
+		.entries(rows);
+
+	appendDivisionsAndRunningTotals();
+	updateScales();
+	appendSliders();
+
+	appendPtLines();
+
+	updateFenwickGrid();
+	updateFenwickLines();
+
+	gameWhiskersAnchorLabelsSvg.append("text")
+		.attr("class", "anchor")
+		.attr("x", gameWhiskersAnchorLabelsMargin.left)
+		.attr("y", gameWhiskersYScale(0.5))
+		.attr("alignment-baseline", "hanging")
+		.attr("fill", midGray)
+			.text("50%");
+	gameWhiskersAnchorLabelsSvg.append("text")
+		.attr("class", "anchor")
+		.attr("x", gameWhiskersAnchorLabelsMargin.left)
+		.attr("y", gameWhiskersYScale(0))
+		.attr("fill", midGray)
+			.text("0");
+
+	// Add listeners for division selector buttons
+	d3.selectAll("li")
+		.on("click", function() { getTeamsToHighlight(d3.select(this).attr("class")); });
+
+	getTeamsToHighlight("top8");
+	highlightGame(selectedGame);
+
+	d3.select(window).on("resize", resize);
+});
+
+// **********
+// Used to convert team names
+// **********
+function convertTeamName(name) {
+
+	if (name == "bruins") {
+		name = "bos";
+	} else if (name == "lightning") {
+		name = "tbl";
+	} else if (name == "canadiens") {
+		name = "mtl";
+	} else if (name == "wings") {
+		name = "det";
+	} else if (name == "senators") {
+		name = "ott";
+	} else if (name == "leafs") {
+		name = "tor";
+	} else if (name == "panthers") {
+		name = "fla";
+	} else if (name == "sabres") {
+		name = "buf";
+	} else if (name == "penguins") {
+		name = "pit";
+	} else if (name == "rangers") {
+		name = "nyr";
+	} else if (name == "flyers") {
+		name = "phi";
+	} else if (name == "jackets") {
+		name = "cbj";
+	} else if (name == "capitals") {
+		name = "wsh";
+	} else if (name == "devils") {
+		name = "njd";
+	} else if (name == "hurricanes") {
+		name = "car";
+	} else if (name == "islanders") {
+		name = "nyi";
+	} else if (name == "avalanche") {
+		name = "col";
+	} else if (name == "blues") {
+		name = "stl";
+	} else if (name == "blackhawks") {
+		name = "chi";
+	} else if (name == "wild") {
+		name = "min";
+	} else if (name == "stars") {
+		name = "dal";
+	} else if (name == "predators") {
+		name = "nsh";
+	} else if (name == "jets") {
+		name = "wpg";
+	} else if (name == "ducks") {
+		name = "ana";
+	} else if (name == "sharks") {
+		name = "sjs";
+	} else if (name == "kings") {
+		name = "lak";
+	} else if (name == "coyotes") {
+		name = "phx";
+	} else if (name == "canucks") {
+		name = "van";
+	} else if (name == "flames") {
+		name = "cgy";
+	} else if (name == "oilers") {
+		name = "edm";
+	}
+
+	return name;
+}
+
+// **********
+// Preprocess data
+// **********
+function formatData(d) {
+
+	// Convert strings in csv to other types
+	return {
+		team: convertTeamName(d.team),
+		game: +d.game,
+		opp: convertTeamName(d.opp),
+		date: d.date,
+		all_gf: +d.all_gf,
+		all_ga: +d.all_ga,
+		pts: +d.pts,
+		gf: +d.gf,
+		ga: +d.ga,
+		sf: +d.sf,
+		sa: +d.sa,
+		ff: +d.ff,
+		fa: +d.fa,
+		cf: +d.cf,
+		ca: +d.ca,
+		toi: +d.toi
+	};
+}
+
+// **********
+// Add each team's division to the nested data
+// Add a game 0 for each team so that there's a common starting point for the ptLines plot
+// For each game, append the team's total points after playing the game
+// **********
+function appendDivisionsAndRunningTotals() {
+
+	// d loops through each team (first level of the nested structure)
+	dataset.forEach( function(d) {
+
+		// Add the team's division
+		if (d.key === "bos" || d.key === "tbl" || d.key === "mtl" || d.key === "det" || d.key === "ott" || d.key === "tor" || d.key === "fla" || d.key === "buf") {
+			d.division = "atlantic";
+		} else if (d.key === "pit" || d.key === "nyr" || d.key === "phi" || d.key === "cbj" || d.key === "wsh" || d.key === "njd" || d.key === "car" || d.key === "nyi") {
+			d.division = "metropolitan";
+		}
+		else if (d.key === "col" || d.key === "stl" || d.key === "chi" || d.key === "min" || d.key === "dal" || d.key === "nsh" || d.key === "wpg") {
+			d.division = "central";
+		}
+		else if (d.key === "ana" || d.key === "sjs" || d.key === "lak" || d.key === "phx" || d.key === "van" || d.key === "cgy" || d.key === "edm") {
+			d.division = "pacific";
+		}
+
+		// Add a game 0 to the beginning of the values array so that all teams start with 0 points in the ptsOver500 plot
+		d.values.unshift({
+			"team": d.key,
+			"total_pts": 0,
+			"game": 0,
+			"toi": 0
+		});
+
+		// g loops through each game (the 82 'values' in the nested structure) for a particular team, d
+		d.values.forEach( function(g) {
+			var gamesToAggregate = d.values.filter( function(h) { return h.game <= g.game; });
+			g.total_pts = d3.sum(gamesToAggregate, function(h) { return h.pts; });
+		});
+	});
+
+	// Sort dataset by ascending total_pts at season's end (after game 82). Slice the sorted array to get the top8 and bottom8 teams
+	dataset = dataset.sort(function(a, b) { return a.values[a.values.length-1].total_pts - b.values[b.values.length-1].total_pts; });
+	top8Teams = dataset.slice(dataset.length-8).map(function(d) { return d.key; }); // We only need to store the team names
+	bottom8Teams = dataset.slice(0, 8).map(function(d) { return d.key; });
+}
+
+// **********
+// Determine the range of values for each stat and set the domains of each plot's scales
+// **********
+function updateScales() {
+
+	// Get range for season ptsOver500
+	// Nest d3.min and d3.max to get the minimum and maximum values in a nested array
+	var seasonPtsOver500Range = new Array;
+	seasonPtsOver500Range[0] = d3.min(dataset, function(team) {
+		return d3.min(team.values, function(game) {
+			var gamesToAggregate = team.values.filter(function(d) { return d.game <= game.game; });
+			return d3.sum(gamesToAggregate, function(d) { return d.pts; }) - game.game;
+		});
+	});
+	seasonPtsOver500Range[1] = d3.max(dataset, function(team) {
+		return d3.max(team.values, function(game) {
+			var gamesToAggregate = team.values.filter(function(d) { return d.game <= game.game; });
+			return d3.sum(gamesToAggregate, function(d) { return d.pts; }) - game.game;
+		});
+	});
+
+	// Get range for season FF per 60
+	var maxSeasonFfPer60 = d3.max(dataset, function(team) {
+		return d3.max(team.values, function(game) {
+			if (game.game >= earliestGameForSeasonStats) {
+				var gamesToAggregate = team.values.filter(function(d) { return d.game <= game.game; });
+				return 60 * d3.sum(gamesToAggregate, function(d) { return d.ff; }) / d3.sum(gamesToAggregate, function(d) { return d.toi; })
+			}
+			else {
+				return null;
+			}
+		});
+	});
+	var maxSeasonFaPer60 = d3.max(dataset, function(team) {
+		return d3.max(team.values, function(game) {
+			if (game.game >= earliestGameForSeasonStats) {
+				var gamesToAggregate = team.values.filter(function(d) { return d.game <= game.game; });
+				return 60 * d3.sum(gamesToAggregate, function(d) { return d.fa; }) / d3.sum(gamesToAggregate, function(d) { return d.toi; })
+			}
+			else {
+				return null;
+			}
+		});
+	});
+	var seasonFenwickPer60Range = [0];
+	seasonFenwickPer60Range[1] = d3.max([maxSeasonFfPer60, maxSeasonFaPer60]);
+
+	// Get range for season shotPctFor - shotPctAgainst
+	var seasonShotPctDiffRange = new Array;
+	seasonShotPctDiffRange[0] = d3.min(dataset, function(team) {
+		return d3.min(team.values, function(game) {
+			if (game.game >= earliestGameForSeasonStats) {
+				var gamesToAggregate = team.values.filter(function(d) { return d.game <= game.game; });
+				var shotPctF = d3.sum(gamesToAggregate, function(d) { return d.gf; }) / d3.sum(gamesToAggregate, function(d) { return d.sf; });
+				var shotPctA = d3.sum(gamesToAggregate, function(d) { return d.ga; }) / d3.sum(gamesToAggregate, function(d) { return d.sa; });
+				return 100*(shotPctF - shotPctA);
+			}
+			else {
+				return null;
+			}
+		});
+	});
+	seasonShotPctDiffRange[1] = d3.max(dataset, function(team) {
+		return d3.max(team.values, function(game) {
+			if (game.game >= earliestGameForSeasonStats) {
+				var gamesToAggregate = team.values.filter(function(d) { return d.game <= game.game; });
+				var shotPctF = d3.sum(gamesToAggregate, function(d) { return d.gf; }) / d3.sum(gamesToAggregate, function(d) { return d.sf; });
+				var shotPctA = d3.sum(gamesToAggregate, function(d) { return d.ga; }) / d3.sum(gamesToAggregate, function(d) { return d.sa; });
+				return 100*(shotPctF - shotPctA);
+			}
+			else {
+				return null;
+			}
+		});
+	});
+
+	// Get range for game shotPctFor - shotPctAgainst
+	var gameShotPctDiffRange = new Array;
+	gameShotPctDiffRange[0] = d3.min(dataset, function(team) {
+		return d3.min(team.values, function(game) {
+			return game.gf/game.sf - game.ga/game.sa;
+		});
+	});
+	gameShotPctDiffRange[1] = d3.max(dataset, function(team) {
+		return d3.max(team.values, function(game) {
+			return game.gf/game.sf - game.ga/game.sa;
+		});
+	});
+
+	// Get range for game FF percentage
+	var gameFfPctRange = new Array;
+	gameFfPctRange[0] = d3.min(dataset, function(team) {
+		return d3.min(team.values, function(game) {
+			return game.ff / (game.ff + game.fa);
+		});
+	});
+	gameFfPctRange[1] = d3.max(dataset, function(team) {
+		return d3.max(team.values, function(game) {
+			return game.ff / (game.ff + game.fa);
+		});
+	});
+
+	// Set scales using the calculated ranges
+	fenwickLinesYScale.domain(seasonFenwickPer60Range).nice();
+	fenwickLinesXScale.domain(seasonShotPctDiffRange).nice();
+	fenwickLinesXScale.clamp(true);
+	ptLinesXScale.domain(gameRange);
+	ptLinesYScale.domain(seasonPtsOver500Range);
+	gameWhiskersXScale.domain(gameRange);
+	gameWhiskersYScale.domain([gameShotPctDiffRange[0], gameFfPctRange[1]]).nice();
+
+}
+
+function appendPtLines() {
+
+	// Draw anchor for 0 ptsAbove500
+	ptLinesSvg.append("line")
+		.attr("x1", 0)
+		.attr("x2", ptLinesWidth)
+		.attr("y1", ptLinesYScale(0))
+		.attr("y2", ptLinesYScale(0))
+		.attr("stroke-width", 1.5)
+		.attr("stroke", darkGray)
+		.attr("shape-rendering", "crispEdges");
+
+	// Function for drawing each team's path
+	var line = d3.svg.line()
+		.x(function(g) { return ptLinesXScale(g.game); })
+		.y(function(g) { return ptLinesYScale(g.total_pts - g.game); })
+		.interpolate("linear");
+
+	// Plot each team's path
+	var ptLines = ptLinesSvg.selectAll("path")
+		.data(dataset, function(d) { return d.key; });
+	ptLines.enter().append("path")
+		.attr("class", function(d) { return "team " + d.division; })
+		.attr("fill", "none")
+		.attr("stroke-width", 1.25)
+		.attr("d", function(d) { return line(d.values); })
+		.on("click", function(d) { getTeamsToHighlight(d3.select(this).attr("class"), d.key); })
+		.append("title")
+			.text(function(d) { return d.key.toUpperCase(); });
+}
+
+function updateTeamLegend() {
+
+	var highlightedTeamsData = dataset.filter(function(d) { return highlightedTeams.indexOf(d.key) > - 1; });
+
+	var groups = teamLegendSvg.selectAll("g")
+		.data(highlightedTeamsData.reverse(), function(d) { return d.key; });	// Reverse array so that the team with the most points is at the top of the legend
+	groups.enter()
+		.append("g")
+			.attr("class", function(d) { return d.key; })
+		.append("text")
+			.attr("class", "legend")
+			.text( function(d) { return d.key.toUpperCase(); })
+			.attr("alignment-baseline", "hanging")
+			.attr("x", teamLegendChildMargin.left)
+			.attr("y", gameWhiskersYScale(0.5));
+	groups.exit().remove();
+	groups
+		.attr("transform", function (d, i) {
+			return "translate(0, " +  (i * (teamLegendChildHeight+teamLegendChildMargin.top+teamLegendChildMargin.bottom)) + ")";
+		})
+		.attr("fill", function(d, i) { return teamColours[i]; });
+
+	var ptTotals = groups.selectAll("text.points")
+		.data(function(d) {
+			return d.values.filter( function(g) { return g.game === selectedGame; });
+		});
+	ptTotals.enter().append("text")
+		.attr("class", "legend points")
+		.attr("x", teamLegendChildMargin.left)
+		.attr("y", gameWhiskersYScale(0));
+	ptTotals
+		.attr("fill", function(g, i, j) { return teamColours[j]; })
+		.text( function(g) {
+		var outputStr = String(g.total_pts - selectedGame);
+		if (g.total_pts - selectedGame > 0) {
+			outputStr = "+" + outputStr;
+		}
+		return outputStr;
+	});
+}
+
+function updateGameWhiskers() {
+
+	var highlightedTeamsData = dataset.filter(function(d) { return highlightedTeams.indexOf(d.key) > - 1; });
+
+	// Create a group for each team's plot so that we can position the group using translation
+	// Reverse the data for "groups" because we want the team with the most points to be the first whisker plot
+	var groups = gameWhiskersSvg.selectAll("g")
+		.data(highlightedTeamsData.reverse(), function(d) { return d.key; });
+	groups.enter().append("g")
+		.attr("class", function(d) { return d.key; });
+	groups.exit().remove();
+	groups.attr("transform", function (d, i) {
+			return "translate(0, " +  (i * (gameWhiskersChildHeight+gameWhiskersChildMargin.top+gameWhiskersChildMargin.bottom)) + ")";
+		});
+
+	// Draw anchors for 0% and 50%
+	groups.append("line")
+		.attr("class", "anchor")
+		.attr("shape-rendering", "crispEdges")
+		.attr("stroke", midGray)
+		.attr("stroke-width", 1)
+		.attr("x1", -gameWhiskersChildMargin.left)
+		.attr("x2", gameWhiskersChildWidth + gameWhiskersChildMargin.left)
+		.attr("y1", gameWhiskersYScale(0))
+		.attr("y2", gameWhiskersYScale(0));
+	groups.append("line")
+		.attr("class", "anchor")
+		.attr("shape-rendering", "crispEdges")
+		.attr("stroke", midGray)
+		.attr("stroke-width", 1)
+		.attr("x1", -gameWhiskersChildMargin.left)
+		.attr("x2", gameWhiskersChildWidth + gameWhiskersChildMargin.left)
+		.attr("y1", gameWhiskersYScale(0.5))
+		.attr("y2", gameWhiskersYScale(0.5));
+
+	// Draw whiskers for each game
+	var whiskers = groups.selectAll("line.game")
+		.data(function(d) {
+			return d.values.filter( function(g) { return g.game > 0; });
+		});
+	whiskers.enter().append("line")
+		.attr("class", "game")
+		.attr("shape-rendering", "crispEdges")
+		.attr("stroke-width", whiskerWidth)
+		.on("mouseover", gameWhiskersTip.show)
+		.on("mouseout", gameWhiskersTip.hide);
+	whiskers
+		.attr("x1", function (d) { return gameWhiskersXScale(d.game) - whiskerWidth; })
+		.attr("x2", function (d) { return gameWhiskersXScale(d.game) - whiskerWidth; })
+		.attr("y1", function (d) {
+			// Add a marker if FF% < (shootingPercentageFor - shootingPercentageAgainst)
+			if ( (d.ff / (d.ff+d.fa)) - (d.gf/d.sf - d.ga/d.sa) <= 0 ) {
+
+				gameWhiskersSvg.select("g." + d.team).append("text")
+					.attr("class", "note")
+					.attr("x", gameWhiskersXScale(d.game)-2)
+					.attr("y", 10)
+					.attr("fill", darkGray)
+					.style("text-anchor", "middle")
+					.style("font-size", "11px")
+					.style("cursor", "default")
+					.text("×")
+					.on("mouseover", function() { gameWhiskersTip.show(d); })
+					.on("mouseout", gameWhiskersTip.hide);
+			}
+			return gameWhiskersYScale(d.gf/d.sf - d.ga/d.sa);
+		})
+		.attr("y2", function (d) { return gameWhiskersYScale(d.ff / (d.ff + d.fa)); })
+		.attr("stroke", function (d) {
+			if (d.pts === 2) {
+				return whiskerColours[0];
+			}
+			else {
+				return whiskerColours[1];
+			}
+		});
+}
+
+function updateFenwickGrid() {
+
+	var xTickValues = new Array;
+	for (var i = fenwickLinesXScale.domain()[0]; i <= fenwickLinesXScale.domain()[1]; i+=fenwickLinesXAxisIncrement) {
+		xTickValues.push(i);
+	}
+
+	// Round the y domain maximum to the next multiple of 10
+	var yIncrement = 10;
+	fenwickLinesYScale.domain()[1] = Math.ceil(fenwickLinesYScale.domain()[1]/yIncrement) * yIncrement;
+	fenwickLinesYScale.clamp(false);
+	var yTickValues = new Array;
+	for (var i = yIncrement; i <= fenwickLinesYScale.domain()[1]; i+=yIncrement) {
+		yTickValues.push(i);
+	}
+
+	// Initialize and append axes
+	fenwickLinesXAxis = d3.svg.axis()
+		.scale(fenwickLinesXScale)
+		.orient("bottom")
+		.tickValues(xTickValues)
+		.tickSize(0, 0, 0);
+	fenwickLinesYAxis = d3.svg.axis()
+		.scale(fenwickLinesYScale)
+		.orient("right")
+		.tickValues(yTickValues)
+		.tickFormat(formatYTicks)
+		.tickSize(0, 0, 0);
+	fenwickLinesSvg.append("g")
+		.attr("class", "x axis")
+		.attr("transform", "translate(0," + fenwickLinesHeight + ")")
+		.call(fenwickLinesXAxis);
+	fenwickLinesSvg.append("g")
+		.attr("class", "y axis")
+		.attr("stroke-width", 0)
+		.call(fenwickLinesYAxis)
+		.selectAll("text")
+			.attr("dx", "-25px");
+
+	// Set text colour of x-axis and y-axis tick values
+	fenwickLinesSvg.selectAll("g.axis").selectAll("text")
+		.attr("fill", function (d) {
+			if (d===0) {
+				return darkGray;
+			}
+			else {
+				return midGray;
+			}
+		});
+
+	// Create data that the dots in the dot grid will be bound to
+	for (var i = 0; i < fenwickLinesXAxis.tickValues().length; i++) {
+		for (var j = 0; j < fenwickLinesYAxis.tickValues().length; j++) {
+			// Don't draw the top-left dot in the grid, since that's where the y-axis label is
+			if (i > 0 || j < fenwickLinesYAxis.tickValues().length-1) {
+				dotCoords.push([fenwickLinesXAxis.tickValues()[i], fenwickLinesYAxis.tickValues()[j]]);
+			}
+		}
+	}
+
+	// Append circles to create dot grid
+	var dots = fenwickLinesSvg.selectAll("circle.axis")
+		.data(dotCoords);
+	dots.enter().append("circle")
+		.attr("class", "axis")
+		.attr("r", 1.5)
+		.attr("fill", function(d) {
+			if (d[0] === 0) {
+				return darkGray;
+			} else {
+				return midGray;
+			}
+		})
+		.attr("cy", function(d) { return fenwickLinesYScale(d[1]); }); // cx will be set by updateFenwickLines
+
+	fenwickLinesSvg.append("text")
+		.attr("text-anchor", "end")
+		.attr("class", "axis")
+		.attr("fill", midGray)
+		.attr("x", fenwickLinesWidth)
+		.attr("y", fenwickLinesHeight - 7)
+		.text("Shooting percentage: for − against"); // Use a minus hyphen and thinspaces here
+}
+
+
+// **********
+// Used for the y-axis tickFormat in the fenwickLines plot
+// *********
+function formatYTicks(d) {
+	if (d === fenwickLinesYScale.domain()[1]) {
+		return d + " Fenwick/60";
+	}
+	else {
+		return d;
+	}
+}
+
+// **********
+// Plot each team in the fenwickLines plot for the specified game
+// This function isn't responsible for highlighting the selected division
+// **********
+function updateFenwickLines() {
+
+	// cx is set here because it needs to be updated whenever the window is resized
+	var dots = fenwickLinesSvg.selectAll("circle.axis")
+		.data(dotCoords);
+	dots.attr("cx", function(d) { return fenwickLinesXScale(d[0]); });
+
+	// Update the position of the x-axis label
+	fenwickLinesSvg.select("text.axis")
+		.attr("x", fenwickLinesWidth + 2);
+
+	var fenwickPaths = fenwickLinesSvg.selectAll("path.team")
+		.data(dataset, function(d) { return d.key; });
+
+	fenwickPaths.enter().append("path")
+		.attr("class", function(d) { return "team " + d.division; })
+		.attr("stroke-width", 1.5)
+		.attr("fill", "none")
+		.on("click", function(d) { getTeamsToHighlight(d3.select(this).attr("class"), d.key); })
+		.on("mouseover", fenwickLinesTip.show)
+		.on("mouseout", fenwickLinesTip.hide);
+
+	// Set each point in the arrowhead's SVG path
+	fenwickPaths.attr("d", function(d) {
+
+		// Calculate aggregate statistics
+		var games = d.values.filter(function(g) { return g.game <= selectedGame; });
+		var aggregateGames = d3.max(games, function(g) { return g.game });
+		var aggregatePts = d3.sum(games, function(g) { return g.pts; });
+		var aggregateShootingPercentageFor = d3.sum(games, function(g) { return g.gf; }) / d3.sum(games, function(g) { return g.sf; });
+		var aggregateShootingPercentageAgainst = d3.sum(games, function(g) { return g.ga; }) / d3.sum(games, function(g) { return g.sa; });
+		var aggregateFfPer60 = 60 * d3.sum(games, function(g) { return g.ff; }) / d3.sum(games, function(g) { return g.toi; });
+		var aggregateFaPer60 = 60 * d3.sum(games, function(g) { return g.fa; })/ d3.sum(games, function(g) { return g.toi; });
+
+		// Store the data so that it can be displayed in the d3-tip
+		d.aggregateGames = aggregateGames;
+		d.aggregatePts = aggregatePts;
+		d.aggregateShootingPercentageFor = aggregateShootingPercentageFor;
+		d.aggregateShootingPercentageAgainst = aggregateShootingPercentageAgainst;
+		d.aggregateFfPer60 = aggregateFfPer60;
+		d.aggregateFaPer60 = aggregateFaPer60;
+
+		// Draw arrow
+		var tipX = Math.round(fenwickLinesXScale(100 * (aggregateShootingPercentageFor - aggregateShootingPercentageAgainst)));
+		var tipY = Math.round(fenwickLinesYScale(aggregateFfPer60));
+		var baseY = Math.round(fenwickLinesYScale(aggregateFaPer60));
+		var deltaX = 3;
+		var deltaY = 3;
+		if (aggregateFfPer60 < aggregateFaPer60) {
+			deltaY = -deltaY;
+		}
+		else if (aggregateFfPer60 === aggregateFaPer60)  {
+			deltaY = 0;
+		}
+
+		// Mx,y moves the pen to x,y without drawing a line
+		// Lx,y draw a line from the current pen position to x,y
+		return "M" + (tipX - deltaX) + "," + (tipY + deltaY) +
+			"L" + (tipX) + "," + (tipY) +
+			"L" + (tipX + deltaX) + "," + (tipY + deltaY) +
+			"M" + (tipX) + "," + (tipY) +
+			"L" + (tipX) + "," + (baseY);
+	});
+}
+
+// **********
+// Determines the teams to highlight based on the selectedCriteria
+// selectedCriteria = {atlantic, metropolitan, pacific, central, top8, bottom8}
+// clickedTeam is optional
+// **********
+function getTeamsToHighlight(selectedCriteria, clickedTeam) {
+
+	// If a team's data points were clicked, and the team belongs to the top8 or bottom8 criteria, then select the top8 or bottom 8 criteria before its division.
+	// If top8 or bottom8 is already currently selected, then select its division. The result: clicking on the team's data points toggles between its 2 criteria.
+	if (selectedCriteria.indexOf("selector") < 0 && top8Teams.indexOf(clickedTeam) > -1 && currentCriteria != "top8") {
+		selectedCriteria = "top8";
+	} else if (selectedCriteria.indexOf("selector") < 0 && bottom8Teams.indexOf(clickedTeam) > -1 && currentCriteria != "bottom8") {
+		selectedCriteria = "bottom8";
+	} else if (selectedCriteria.indexOf("atlantic") > -1) {
+		selectedCriteria = "atlantic";
+	} else if (selectedCriteria.indexOf("metropolitan") > -1) {
+		selectedCriteria = "metropolitan";
+	} else if (selectedCriteria.indexOf("central") > -1) {
+		selectedCriteria = "central";
+	} else if (selectedCriteria.indexOf("pacific") > -1) {
+		selectedCriteria = "pacific";
+	} else if (selectedCriteria.indexOf("top8") > -1) {
+		selectedCriteria = "top8";
+	} else if (selectedCriteria.indexOf("bottom8") > -1) {
+		selectedCriteria = "bottom8";
+	}
+
+	// Only make updates if the criteria changed
+	if (currentCriteria != selectedCriteria) {
+		currentCriteria = selectedCriteria;
+		var teamsToHighlight = new Array();
+
+		if (selectedCriteria === "atlantic" || selectedCriteria === "metropolitan" || selectedCriteria === "central" || selectedCriteria === "pacific") {
+			teamsToHighlight = dataset.filter( function(d) { return d.division === selectedCriteria; });
+
+			// Extract only the team names from teamsToHighlight
+			teamsToHighlight = teamsToHighlight.map(function(d) {
+				return d.key;
+			});
+		} else if (selectedCriteria === "top8") {
+			teamsToHighlight = top8Teams;
+		} else if (selectedCriteria === "bottom8") {
+			teamsToHighlight = bottom8Teams;
+		}
+
+		// Remove the "active" class from all criteria selectors, then add it to the selected division
+		d3.selectAll("li").classed("active", false);
+		d3.select("li." + selectedCriteria).classed("active", true);
+
+		highlightedTeams = teamsToHighlight;
+		highlightTeams();
+	}
+}
+
+// **********
+// 1. Sorts elements so that the highlighted teams appear on top of the non-highlighted teams
+// 2. Colours the elements for the teams in the highlighted division for the ptLines plot and the fenwickLines plot
+// **********
+function highlightTeams() {
+
+	// Highlight teams in the ptLines and fenwickLines plots
+	var svgs = [ptLinesSvg, fenwickLinesSvg];
+
+	for (var i = 0; i < svgs.length; i++) {
+
+		var plotElements = svgs[i].selectAll("path.team");
+
+		// Sort the ptLines so that the highlighted teams are displayed on top (in descending order of total_pts at season's end)
+		plotElements.sort(function (a, b) {
+				if (highlightedTeams.indexOf(a.key) > -1 && highlightedTeams.indexOf(b.key) < 0) {
+					return 1; // Highlighted teams are always given a higher index than teams not in the selected division
+				}
+				else if (highlightedTeams.indexOf(a.key) < 0 && highlightedTeams.indexOf(b.key) > -1) {
+					return -1; // Highlighted teams are always given a higher index than teams not in the selected division
+				}
+				else if ((highlightedTeams.indexOf(a.key) > -1 && highlightedTeams.indexOf(b.key) > -1)
+					|| (highlightedTeams.indexOf(a.key) < 0 && highlightedTeams.indexOf(b.key) < 0)) {
+					// If "a" has more points than "b", this will return a positive value, which will give "a" higher index than "b" in the sorted array
+					// If the difference is 0, then "a" and "b" are considered equal
+					// If the diffence is negative, "a" will be given a lower index than "b" in the sorted array
+					return a.values[a.values.length-1].total_pts - b.values[b.values.length-1].total_pts;
+				}
+			});
+
+		// Update element colours for highlighted and non-highlighted teams
+		plotElements.attr("stroke", function(d) {
+			if (highlightedTeams.indexOf(d.key) > -1) {
+				return teamColours[(teamColours.length - 1) - highlightedTeams.indexOf(d.key) - (teamColours.length - highlightedTeams.length)];
+			} else if (i === 0) {
+				return lightGray;
+			} else if (i === 1) {
+				return midGray;
+			}
+		});
+	}
+
+	// To ensure the fenwickLines d3-tip refreshes (since a team's colour can change for different criteria), hide the tooltip
+	fenwickLinesTip.hide();
+
+	updateTeamLegend();
+	updateGameWhiskers();
+}
+
+// **********
+// Add listeners and lines for the time selection sliders
+// **********
+function appendSliders() {
+	d3.select("#ptLines")
+		.on("mousemove", selectGame)
+		.on("touchmove", selectGame);
+	d3.select("#gameWhiskers")
+		.on("mousemove", selectGame)
+		.on("touchmove", selectGame);
+	ptLinesSliderInput = ptLinesSvg.append("line")
+		.attr("x1", ptLinesXScale(gameRange[1]))
+		.attr("x2", ptLinesXScale(gameRange[1]))
+		.attr("y1", 0)
+		.attr("y2", d3.select("#ptLines").attr("height"))
+		.attr("stroke-width", 1)
+		.attr("stroke-dasharray", "1,2")
+		.attr("shape-rendering", "crispEdges")
+		.attr("stroke", "#222");
+	gameWhiskersSliderInput = gameWhiskersSvg.append("line")
+		.attr("x1", gameWhiskersXScale(gameRange[1]))
+		.attr("x2", gameWhiskersXScale(gameRange[1]))
+		.attr("y1", 0)
+		.attr("y2", d3.select("#gameWhiskers").attr("height"))
+		.attr("stroke-width", 1)
+		.attr("stroke-dasharray", "1,2")
+		.attr("shape-rendering", "crispEdges")
+		.attr("stroke", "#222");
+}
+
+function selectGame() {
+
+	// Since touch devices don't close d3-tips automatically, force them to close
+	if (d3.event.type === "touchmove") {
+		gameWhiskersTip.hide();
+		fenwickLinesTip.hide();
+	}
+
+	// Convert cursor's x-position to a game number
+	var pos = d3.mouse(d3.select(this.firstChild).node());
+	var movedX = pos[0];
+	if (d3.select(this).node().id === "ptLines") {
+		movedX = Math.max(movedX, ptLinesXScale.range()[0] - ptLinesMargin.left);
+		movedX = Math.min(movedX, ptLinesXScale.range()[1] + ptLinesMargin.right);
+		selectedGame = ptLinesXScale.invert(movedX);
+	}
+	else if (d3.select(this).node().id === "gameWhiskers") {
+		movedX = Math.max(movedX, gameWhiskersXScale.range()[0] - gameWhiskersChildMargin.left);
+		movedX = Math.min(movedX, gameWhiskersXScale.range()[1] + gameWhiskersChildMargin.right);
+		selectedGame = gameWhiskersXScale.invert(movedX);
+	}
+	selectedGame = Math.ceil(selectedGame);
+	selectedGame = Math.max(selectedGame, 1); // Game 0 shouldn't be selectable
+	selectedGame = Math.min(selectedGame, 82);
+	highlightGame(selectedGame);
+
+	// Prevent window from scrolling while user is using the slider -- used to handle touch events
+	if (d3.event) {
+		d3.event.preventDefault();
+    }
+}
+
+function highlightGame(game) {
+
+	// Update all plots to reflect the selected game
+	if (game >= earliestSelectableGame) {
+		ptLinesSliderInput
+			.attr("x1", ptLinesXScale(game))
+			.attr("x2", ptLinesXScale(game));
+		gameWhiskersSliderInput
+			.attr("x1", gameWhiskersXScale(game) - whiskerWidth/2)
+			.attr("x2", gameWhiskersXScale(game) - whiskerWidth/2);
+		updateFenwickLines();
+		updateTeamLegend();
+	}
+
+	var titleString;
+	if (game === 1) {
+		titleString = "game 1";
+	} else if (game < 82) {
+		titleString = "games 1–" + selectedGame; // Use an en-dash here
+	} else if (game === 82) {
+		titleString = "the full season";
+	}
+	d3.select("#fenwickLinesDiv").select("h2").text("Fenwick rates & shooting percentages for " + titleString);
+}
+
+// **********
+// Update graph using new window width and height
+// **********
+function resize() {
+
+	// Update width
+	fenwickLinesWidth = parseInt(d3.select("#fenwickLinesDiv").style("width"), 10) - fenwickLinesMargin.left - fenwickLinesMargin.right;
+
+	// Resize the scale domain, then the svg
+	fenwickLinesXScale.range([0, fenwickLinesWidth]);
+	//console.log(d3.select(fenwickLinesSvg.node().parentNode));
+	d3.select(fenwickLinesSvg.node().parentNode)
+		.style("width", (fenwickLinesWidth + fenwickLinesMargin.left + fenwickLinesMargin.right) + "px");
+
+	// Update the axes with the new scales
+	fenwickLinesSvg.select(".x.axis")
+		.call(fenwickLinesXAxis);
+
+	updateFenwickLines();
+}
+</script>
+</body>
+</html>
