@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang='en'>
 <head>
-  <meta charset="utf-8">
+  <meta charset='utf-8'>
   <title>Shot Differentials</title>
-  <link rel="stylesheet" type="text/css" href="shot-diffs.css">
-  <script src="../d3.min.js" charset="utf-8"></script>
+  <link rel='stylesheet' type='text/css' href='shot-diffs.css'>
+  <script src='../d3.min.js' charset='utf-8'></script>
 </head>
 <body>
-  <div class="corsi">
-    <div class="intro">
-      <h1>5-on-5 Shot Differentials, 2015-2016</h1>
-      <p>Lines show score-adjusted values</p>
+  <div class='corsi'>
+    <div class='intro'>
+      <h1>5-on-5 Shot Differentials</h1>
+      <p>2015-2016 regular season. Lines show score-adjusted values.</p>
     </div>
   </div>
 </body>
@@ -112,10 +112,10 @@ function appendCards() {
     .enter().append('div')
     .attr('class', 'team card');
 
-  var headers = cards.append("div")
-    .attr("class", "header");
-  headers.append("h3")
-    .attr("class", "name")
+  var headers = cards.append('div')
+    .attr('class', 'header');
+  headers.append('h3')
+    .attr('class', 'name')
     .text(function(d) { return d.key; });
   headers.append('h3')
     .attr('class', 'total')
@@ -172,48 +172,48 @@ function appendCharts() {
       .x(function(d, i) { return x(i); })
       .y0(y(0))
       .y1(function(d) { return y(d); });
-  d3.selectAll(".corsi svg").append("defs")
-    .append("clipPath")
-      .attr("id", function(d) { return "corsi-clip-path-" + d.key; })
-      .append("path")
+  d3.selectAll('.corsi svg').append('defs')
+    .append('clipPath')
+      .attr('id', function(d) { return 'corsi-clip-path-' + d.key; })
+      .append('path')
         .datum(function(d) { return d.cDiffsRaw; })
-        .attr("d", area);
+        .attr('d', area);
 
   // Append a root g element to svgs
-  var svgs = d3.selectAll("svg").append("g")
-    .attr("transform", "translate(" + margin.left + "," + margin.top +")");
+  var svgs = d3.selectAll('svg').append('g')
+    .attr('transform', 'translate(' + margin.left + ',' + margin.top +')');
 
   // Append a blue rectangle for the positive area, then apply the clip-path
-  svgs.append("rect")
-    .attr("class", "blue bg")
-    .attr("x", 0)
-    .attr("width", x.range()[1]);
-  d3.selectAll(".corsi .blue.bg")
-    .attr("y", y.range()[1])
-    .attr("height", y(0) - y.range()[1])
-    .style("clip-path", function(d) {
-      return "url(#corsi-clip-path-" + d.key + ")";
+  svgs.append('rect')
+    .attr('class', 'blue bg')
+    .attr('x', 0)
+    .attr('width', x.range()[1]);
+  d3.selectAll('.corsi .blue.bg')
+    .attr('y', y.range()[1])
+    .attr('height', y(0) - y.range()[1])
+    .style('clip-path', function(d) {
+      return 'url(#corsi-clip-path-' + d.key + ')';
     });
 
   // Append a red rectangle for the negative area, then apply the clip-path
-  svgs.append("rect")
-    .attr("class", "red bg")
-    .attr("x", 0)
-    .attr("width", x.range()[1]);
-  d3.selectAll(".corsi .red.bg")
-    .attr("y", y(0))
-    .attr("height", y.range()[0] - y(0))
-    .style("clip-path", function(d) {
-      return "url(#corsi-clip-path-" + d.key + ")";
+  svgs.append('rect')
+    .attr('class', 'red bg')
+    .attr('x', 0)
+    .attr('width', x.range()[1]);
+  d3.selectAll('.corsi .red.bg')
+    .attr('y', y(0))
+    .attr('height', y.range()[0] - y(0))
+    .style('clip-path', function(d) {
+      return 'url(#corsi-clip-path-' + d.key + ')';
     });
 
   // Append score-adjusted line
   var path = d3.line()
     .x(function(d, i) { return x(i); })
     .y(function(d) { return y(d); });
-  svgs.append("path")
+  svgs.append('path')
     .datum(function(d) { return d.cDiffsAdj; })
-    .attr("d", path)
+    .attr('d', path)
     .attr('class', 'adjusted');
 }
 </script>
