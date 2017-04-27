@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shot Differentials</title>
+  <link rel="stylesheet" type="text/css" href="shot-diffs.css">
+  <script src="../d3.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <div class="corsi">
+    <div class="intro">
+      <h1>5-on-5 Shot Differentials, 2015-2016</h1>
+      <p>Lines show score-adjusted values</p>
+    </div>
+  </div>
+</body>
+<script>
+
+/*****
+
+Run this query in the Postgres db to produce stats.csv:
+
+SELECT r.datetime, s.game_id, team, score_sit, sf, sa, bsf, bsa, msf, msa
+FROM game_stats AS s
+INNER JOIN game_results AS r ON s.game_id = r.game_id
+WHERE strength_sit = 'ev5'
+AND player_id < 2
+AND s.game_id < 30000
+
+*****/
+
+var dataset;
+
+d3.csv('shot-diffs.csv', function(data) {
+    dataset = data;
+    prepareData();
+  }).row(function(r) {
+    return {
+      'datetime': new Date(r.datetime),
+      'team': r.team,
+      'gameId': +r.game_id,
+      'scoreSit': +r.score_sit,
+      'cf': (+r.sf) + (+r.msf) + (+r.bsf),
+      'ca': (+r.sa) + (+r.msa) + (+r.bsa)
+    }
+  });
+
+function prepareData() {
+
+  // Nest data by team, then by game - each game will have multiple score situations
+  dataset = d3.nest()
+    .key(function(d) { return d.team; })
+    .key(function(d) { return d.gameId; })
+    .entries(dataset);
+
+  // Sort each team's games by date (earliest to latest)
+  dataset.forEach(function(team) {
+    team.values.sort(function(gameA, gameB) {
+      return gameA.values[0].datetime - gameB.values[0].datetime;
+    });
+  });
+
+  // For each game, record the date, and total corsi differential (raw and adjusted)
+  var weights = {
+    '-3': 0.841,
+    '-2': 0.884,
+    '-1': 0.932,
+    '0': 1,
+    '1': 2 - 0.932,
+    '2': 2 - 0.884,
+    '3': 2 - 0.841
+  }
+  dataset.forEach(function(team) {
+    team.values.forEach(function(game) {
+      game.datetime = game.values[0].datetime;
+      game.cf = d3.sum(game.values, function(d) { return d.cf; });
+      game.ca = d3.sum(game.values, function(d) { return d.ca; });
+      game.cfAdj = d3.sum(game.values, function(d) { return d.cf * weights[d.scoreSit]; });
+      game.caAdj = d3.sum(game.values, function(d) {
+        var flippedScoreSit = parseInt(-d.scoreSit, 10);
+        return d.ca * weights[flippedScoreSit];
+      });
+    });
+  });
+
+  // For each team, record the total differential after each game (raw and adjusted) in an array
+  dataset.forEach(function(team) {
+    team.cDiffsRaw = [];
+    team.cDiffsAdj = [];
+    var runningDiffRaw = 0;
+    var runningDiffAdj = 0;
+    team.values.forEach(function(game) {
+      runningDiffRaw += game.cf - game.ca;
+      runningDiffAdj += game.cfAdj - game.caAdj;
+      team.cDiffsRaw.push(runningDiffRaw);
+      team.cDiffsAdj.push(runningDiffAdj);
+    });
+  });
+
+  // Sort teams from the highest to lowest raw corsi differential
+  dataset.sort(function(a, b) {
+    return b.cDiffsRaw[b.cDiffsRaw.length - 1] - a.cDiffsRaw[a.cDiffsRaw.length - 1];
+  });
+
+  appendCards();
+};
+
+function appendCards() {
+
+  var cards = d3.selectAll('.corsi').selectAll('.team.card')
+    .data(dataset)
+    .enter().append('div')
+    .attr('class', 'team card');
+
+  var headers = cards.append("div")
+    .attr("class", "header");
+  headers.append("h3")
+    .attr("class", "name")
+    .text(function(d) { return d.key; });
+  headers.append('h3')
+    .attr('class', 'total')
+    .text(function(d) {
+      var total = d.cDiffsRaw[d.cDiffsRaw.length - 1];
+      if (total > 0) { return '+' + total; }
+      else { return total; }
+    });
+
+  appendCharts();
+};
+
+function appendCharts() {
+
+  // Get number of games
+  var maxGames = d3.max(dataset, function(team) {
+    return team.cDiffsRaw.length;
+  });
+
+  // Get the larger of extents from the raw and adjusted values
+  var extents = [];
+  extents.push(d3.min(dataset, function(team) {
+    return d3.min(team.cDiffsRaw);
+  }));
+  extents.push(d3.max(dataset, function(team) {
+    return d3.max(team.cDiffsRaw);
+  }));
+  extents.push(d3.min(dataset, function(team) {
+    return Math.floor(d3.min(team.cDiffsAdj));
+  }));
+  extents.push(d3.max(dataset, function(team) {
+    return Math.ceil(d3.max(team.cDiffsAdj));
+  }));
+  var extent = d3.extent(extents);
+
+  // Set svg dimensions and scales
+  var margin = {top: 0, right: 0, bottom: 0, left: 0};
+  var h = 96;
+  var w = 96;
+  var x = d3.scaleLinear()
+    .domain([0, maxGames])
+    .range([0, w]);
+  var y = d3.scaleLinear()
+    .domain(extent)
+    .range([h, 0]);
+
+  // Append svgs
+  d3.selectAll('.team.card').append('svg')
+    .attr('height', (h + margin.top + margin.bottom) + 'px')
+    .attr('width', (w + margin.left + margin.right) + 'px');
+
+  // Append clip-paths for each team's area graph
+  var area = d3.area()
+      .x(function(d, i) { return x(i); })
+      .y0(y(0))
+      .y1(function(d) { return y(d); });
+  d3.selectAll(".corsi svg").append("defs")
+    .append("clipPath")
+      .attr("id", function(d) { return "corsi-clip-path-" + d.key; })
+      .append("path")
+        .datum(function(d) { return d.cDiffsRaw; })
+        .attr("d", area);
+
+  // Append a root g element to svgs
+  var svgs = d3.selectAll("svg").append("g")
+    .attr("transform", "translate(" + margin.left + "," + margin.top +")");
+
+  // Append a blue rectangle for the positive area, then apply the clip-path
+  svgs.append("rect")
+    .attr("class", "blue bg")
+    .attr("x", 0)
+    .attr("width", x.range()[1]);
+  d3.selectAll(".corsi .blue.bg")
+    .attr("y", y.range()[1])
+    .attr("height", y(0) - y.range()[1])
+    .style("clip-path", function(d) {
+      return "url(#corsi-clip-path-" + d.key + ")";
+    });
+
+  // Append a red rectangle for the negative area, then apply the clip-path
+  svgs.append("rect")
+    .attr("class", "red bg")
+    .attr("x", 0)
+    .attr("width", x.range()[1]);
+  d3.selectAll(".corsi .red.bg")
+    .attr("y", y(0))
+    .attr("height", y.range()[0] - y(0))
+    .style("clip-path", function(d) {
+      return "url(#corsi-clip-path-" + d.key + ")";
+    });
+
+  // Append score-adjusted line
+  var path = d3.line()
+    .x(function(d, i) { return x(i); })
+    .y(function(d) { return y(d); });
+  svgs.append("path")
+    .datum(function(d) { return d.cDiffsAdj; })
+    .attr("d", path)
+    .attr('class', 'adjusted');
+}
+</script>
+</html>
