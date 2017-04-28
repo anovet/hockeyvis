@@ -1,33 +1,21 @@
 <!DOCTYPE html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shot Differentials</title>
-  <link rel='stylesheet' type='text/css' href='shot-diffs.css'>
-  <script src='../d3.min.js' charset='utf-8'></script>
+  <link rel="stylesheet" type="text/css" href="shot-diffs.css">
+  <script src="../d3.min.js" charset="utf-8"></script>
 </head>
 <body>
-  <div class='corsi'>
-    <div class='intro'>
+  <div class="corsi">
+    <div class="intro">
       <h1>5-on-5 Shot Differentials</h1>
       <p>2015-2016 regular season. Lines show score-adjusted values.</p>
     </div>
   </div>
 </body>
 <script>
-
-/*****
-
-Run this query in the Postgres db to produce stats.csv:
-
-SELECT r.datetime, s.game_id, team, score_sit, sf, sa, bsf, bsa, msf, msa
-FROM game_stats AS s
-INNER JOIN game_results AS r ON s.game_id = r.game_id
-WHERE strength_sit = 'ev5'
-AND player_id < 2
-AND s.game_id < 30000
-
-*****/
 
 var dataset;
 
