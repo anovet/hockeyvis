@@ -9,6 +9,8 @@
       font-family: -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
       color: #222;
       max-width: 480px;
+      min-width: 320px;
+      box-sizing: border-box;
       font-size: 16px;
       line-height: 24px;
       padding: 40px 24px;
@@ -29,7 +31,7 @@
       margin: 0;
     }
     li {
-      margin: 0 0 24px 0;
+      margin: 48px 0;
     }
     a {
       color: #0074d9;
@@ -47,6 +49,26 @@
     .note {
       font-size: 14px;
     }
+    img {
+      display: block;
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    @media (min-width: 400px) {
+      li.col2 > * {
+        display: inline-block;
+        vertical-align: top;
+        width: 50%;
+        box-sizing: border-box;
+
+      }
+      li.col2 img {
+        padding-left: 12px;
+      }
+      li.col2 > div {
+        padding-right: 12px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -55,11 +77,27 @@
     <p>Kevin Kan, <a href="mailto:kan.kevin@gmail.com">kan.kevin@gmail.com</a></p>
   </div>
   <ul>
-    <li><a href="http://www.datarink.com">datarink.com is a fast, polished, and responsive web application with team and player dashboards, and easy-to-use player comparisons.</a> <span class="note">Built with Vue.js, Express.js, and PostgreSQL</span></li>
-    <li><a href="shot-diffs/shot-diffs.html">A static visualization of teams' shot differentials for the 2015-2016 regular season.</a> <span class="note">Built with d3.js</span></li>
-    <li><a href="goal-dist/goal-dist.html">A static visualization of how teams' goal-scoring was distributed amongst players for the 2015-2016 regular season.</a> <span class="note">Built with d3.js</span></li>
-    <li><a href="play-diagram/play-diagram.html">An interactive tool for manually diagramming hockey plays. The tool can be adapted to use player tracking data, but tracking data is not publicly available.</a> <span class="note">Built with d3.js</span></li>
-    <li><a href="season-report/index.html">An interactive report of teams' performance during the 2013-2014 regular season.</a> <span class="note">Built with d3.js</span></li>
+    <li class="col1">
+      <img src="images/datarink.png" style="border: 1px solid #e0e0e0; border-radius: 4px;"
+      /><a href="http://www.datarink.com">datarink.com is a fast, polished, and responsive web application with team and player dashboards, and easy-to-use player comparisons.</a> <span class="note">Built with Vue.js, Express.js, and PostgreSQL</span></li>
+    <li class="col1">
+      <img src="images/shot-diff.png"
+      /><a href="shot-diffs/shot-diffs.html">A static visualization of teams' shot differentials for the 2015-2016 regular season.</a> <span class="note">Built with d3.js</span></li>
+    <li class="col1">
+      <img src="images/goal-dist.png"
+      /><a href="goal-dist/goal-dist.html">A static visualization of how teams' goal-scoring was distributed amongst players for the 2015-2016 regular season.</a> <span class="note">Built with d3.js</span></li>
+    <li class="col1">
+      <img src="images/season-summary.png"
+      /><div>
+        <a href="season-report/index.html">An interactive report of teams' performance during the 2013-2014 regular season.</a> <span class="note">Built with d3.js</span>
+        </div>
+    </li>
+    <li class="col2">
+      <div>
+        <a href="play-diagram/play-diagram.html?pk=0,y,1+2,y,2+5,y,3+6,s,190,42&p1=F1;b;0,100,43+2,135,43+4,157,48+6,178,42&p2=F2;b;0,100,65+2,129,65+4,139,70+6,148,70&p3=F3;b;0,100,23+2,120,22+4,144,10+6,178,20&p4=D1;b;&p5=D2;b;&p6=F1;r;&p7=F2;r;&p8=F3;r;&p9=D1;r;0,155,55+3,155,70+6,173,61&p10=D2;r;0,155,31+1,143,23+3,151,15+6,179,28">An interactive tool for diagramming hockey plays.</a> <span class="note">Built with d3.js</span>
+      </div
+      ><img src="images/play-diagram.gif"/>
+    </li>
   </ul>
 </body>
 </html>
