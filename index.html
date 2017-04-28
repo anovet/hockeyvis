@@ -8,26 +8,57 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
       color: #222;
-      max-width: 768px;
+      max-width: 480px;
       font-size: 16px;
       line-height: 24px;
-      margin: 24px;
+      padding: 40px 24px;
+      margin: 0 auto;
     }
     h1 {
+      font-weight: 400;
       font-size: 24px;
       line-height: 32px;
+      margin: 0 0 8px 0;
+    }
+    p {
+      margin: 0;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    li {
+      margin: 0 0 24px 0;
+    }
+    a {
+      color: #0074d9;
+      text-decoration: none;
+    }
+    a:hover,
+    a:active,
+    a:focus {
+      outline: 0;
+      border-bottom: 2px solid #0074d9;
+    }
+    .header {
+      margin-bottom: 48px;
+    }
+    .note {
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-  <h1>Hockey Data Visualization</h1>
-  <p><a href="mailto:kan.kevin@gmail.com">kan.kevin@gmail.com</a></p>
+  <div class="header">
+    <h1>Hockey Data Visualization</h1>
+    <p>Kevin Kan, <a href="mailto:kan.kevin@gmail.com">kan.kevin@gmail.com</a></p>
+  </div>
   <ul>
-    <li><a href="http://www.datarink.com">datarink.com, a responsive hockey analytics web application</a></li>
-    <li><a href="shot-diffs/shot-diffs.html">Shot differentials</a></li>
-    <li><a href="goal-dist/goal-dist.html">Top 10 goal scorers per team</a></li>
-    <li><a href="play-diagram/play-diagram.html">Play diagrammer</a></li>
-    <li><a href="season-report/index.html">Season report</a></li>
+    <li><a href="http://www.datarink.com">datarink.com is a fast, polished, and responsive web application with team and player dashboards, and easy-to-use player comparisons.</a> <span class="note">Built with Vue.js, Express.js, and PostgreSQL</span></li></li>
+    <li><a href="goal-dist/goal-dist.html">A static visualization of how teams' goal-scoring was distributed amongst players for the 2015-2016 regular season.</a> <span class="note">Built with d3.js</span></li></li>
+    <li><a href="play-diagram/play-diagram.html">An interactive tool for manually diagramming hockey plays. The tool can be adapted to use player tracking data, but tracking data is not publicly available.</a> <span class="note">Built with d3.js</span></li></li>
+    <li><a href="season-report/index.html">An interactive report of teams' performance during the 2013-2014 regular season.</a> <span class="note">Built with d3.js</span></li>
   </ul>
 </body>
 </html>
